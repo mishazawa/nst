@@ -6,6 +6,7 @@ import * as pactum from 'pactum';
 import { AuthDto } from 'src/auth/dto';
 import { omit, pick } from 'lodash';
 import { EditUserDto } from 'src/user/dto';
+import { CreateBookmarkDto, UpdateBookmarkDto } from 'src/bookmark/dto';
 
 const PORT = 3333;
 
@@ -40,6 +41,11 @@ describe('App (e2e)', () => {
       email: 'misha@asd.asd',
       password: 'test_test',
     };
+
+    const secondUserCreds: AuthDto = {
+      email: 'misha222@asd.asd',
+      password: 'test_test',
+    };
     const invalidAuthCredsLogin: AuthDto = {
       email: 'misha@asd',
       password: 'test_test',
@@ -54,6 +60,13 @@ describe('App (e2e)', () => {
           .spec()
           .post('/auth/sign_up')
           .withBody(validAuthCreds)
+          .expectStatus(201);
+      });
+      it('create second user', () => {
+        return pactum
+          .spec()
+          .post('/auth/sign_up')
+          .withBody(secondUserCreds)
           .expectStatus(201);
       });
 
@@ -138,6 +151,15 @@ describe('App (e2e)', () => {
           .expectStatus(200)
           .stores('token', 'access_token');
       });
+
+      it('login and store access_token for second user', () => {
+        return pactum
+          .spec()
+          .post('/auth/sign_in')
+          .withBody(secondUserCreds)
+          .expectStatus(200)
+          .stores('token_user2', 'access_token');
+      });
     });
   });
   describe('Users', () => {
@@ -217,10 +239,161 @@ describe('App (e2e)', () => {
   });
 
   describe('Bookmarks', () => {
-    describe('get all', () => {});
-    describe('create', () => {});
-    describe('get by id', () => {});
-    describe('edit', () => {});
-    describe('delete', () => {});
+    const bookmarkGoogle: CreateBookmarkDto = {
+      title: 'google',
+      link: 'https://google.com',
+    };
+
+    const bookmarkGmail: CreateBookmarkDto = {
+      title: 'gmail',
+      link: 'https://gmail.com',
+    };
+
+    const bookmarkYoutube: UpdateBookmarkDto = {
+      title: 'youtube',
+      link: 'https://youtube.com',
+    };
+
+    describe('create', () => {
+      it('creates google bookmark', () => {
+        return pactum
+          .spec()
+          .post('/bookmarks')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .withBody(bookmarkGoogle)
+          .expectStatus(201)
+          .stores('bookmark_id', 'id');
+      });
+
+      it('fail to create bookmark without link', () => {
+        return pactum
+          .spec()
+          .post('/bookmarks')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .withBody(omit(bookmarkGoogle, ['link']))
+          .expectStatus(400);
+      });
+    });
+
+    describe('get by id', () => {
+      it("get bookmark that doesn't exist", () => {
+        return pactum
+          .spec()
+          .get('/bookmarks/{id}')
+          .withPathParams('id', '-1')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .expectStatus(404);
+      });
+      it('get bookmark that does exist', () => {
+        return pactum
+          .spec()
+          .get('/bookmarks/{id}')
+          .withPathParams('id', '$S{bookmark_id}')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .expectStatus(200)
+          .expectBodyContains('google');
+      });
+    });
+
+    describe('edit', () => {
+      it("change bookmark that doesn't exist", () => {
+        return pactum
+          .spec()
+          .patch('/bookmarks/{id}')
+          .withPathParams('id', '-1')
+
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .withBody(bookmarkGmail)
+          .expectStatus(404);
+      });
+
+      it("change bookmark that doesn't belong to user", () => {
+        return pactum
+          .spec()
+          .patch('/bookmarks/{id}')
+          .withPathParams('id', '$S{bookmark_id}')
+          .withHeaders({
+            Authorization: `Bearer $S{token_user2}`,
+          })
+          .withBody(bookmarkYoutube)
+          .expectStatus(404);
+      });
+
+      it('change google bookmark to gmail', () => {
+        return pactum
+          .spec()
+          .patch('/bookmarks/{id}')
+          .withPathParams('id', '$S{bookmark_id}')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .withBody(bookmarkGmail)
+          .expectStatus(200)
+          .expectBodyContains('gmail');
+      });
+
+      it('change gmail bookmark title to youtube', () => {
+        return pactum
+          .spec()
+          .patch('/bookmarks/{id}')
+          .withPathParams('id', '$S{bookmark_id}')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .withBody(omit(bookmarkYoutube, ['link']))
+          .expectStatus(200)
+          .expectBodyContains('gmail')
+          .expectBodyContains('youtube');
+      });
+    });
+
+    describe('get list of user bookmarks', () => {
+      it('get list authorized', () => {
+        return pactum
+          .spec()
+          .get('/bookmarks')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .expectStatus(200)
+          .expectJsonLength(1);
+      });
+      it('get list unauthorized', () => {
+        return pactum.spec().get('/bookmarks').expectStatus(401);
+      });
+    });
+
+    describe('delete', () => {
+      it("bookmark doesn't exist", () => {
+        return pactum
+          .spec()
+          .delete('/bookmarks/{id}')
+          .withPathParams('id', '-1')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .expectStatus(404);
+      });
+      it('bookmark does exist', () => {
+        return pactum
+          .spec()
+          .delete('/bookmarks/{id}')
+          .withPathParams('id', '$S{bookmark_id}')
+          .withHeaders({
+            Authorization: `Bearer $S{token}`,
+          })
+          .expectStatus(204);
+      });
+    });
   });
 });
